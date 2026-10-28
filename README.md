@@ -12,11 +12,17 @@
 - **psiphon**: установка и управление через [vps-psiphon](https://github.com/Chara-Freedom/vps-psiphon): страна выхода, ротация, пул стран, логи, журнал watchdog, outbound для xray, удаление.
 - **status**: состояние сервисов, решения CrowdSec, источники логов, Psiphon.
 
-Не входят (как и просили): порт node-agent, SYNPROXY, опубликованные Docker-порты, fleet auto-sync, сохранение конфига.
-
 ## Запуск
 
-Склонируй репозиторий на сервер и запусти от root из его папки:
+Одной командой, без клонирования (нужен `curl`, если его нет: `sudo apt install -y curl`):
+
+```bash
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/NickelBlvck/server-super/main/srv-guard.sh)"
+```
+
+Команда запускает версию из ветки `main`. Чтобы зафиксировать конкретную версию, замени `main` на хеш коммита.
+
+Для команды `SS` нужен клонированный репозиторий. Склонируй его на сервер и запусти от root из его папки:
 
 ```bash
 sudo bash srv-guard.sh

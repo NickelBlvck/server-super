@@ -73,7 +73,7 @@ run_action() {
 OS_ID="" OS_CODENAME="" OS_PRETTY=""
 
 require_root() {
-  [[ $EUID -eq 0 ]] || die "Запусти от root: sudo bash $0"
+  [[ $EUID -eq 0 ]] || die "Нужен root: запусти с sudo"
 }
 
 require_supported_os() {
@@ -472,8 +472,8 @@ EOF
 # Один раз: sudo bash srv-guard.sh install. Дальше `SS` запускает файл из этого же каталога,
 # поэтому после git pull переустанавливать ничего не нужно.
 install_shortcut() {
-  local self
-  self="$(readlink -f "${BASH_SOURCE[0]}")"
+  local self=""
+  [[ -n "${BASH_SOURCE[0]:-}" ]] && self="$(readlink -f "${BASH_SOURCE[0]}")"
   if [[ ! -f "$self" || "$self" == /dev/* ]]; then
     die "Запусти установку из сохранённого файла (git clone / git pull), а не через пайп"
   fi
@@ -540,6 +540,6 @@ main() {
   esac
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+if [[ "${BASH_SOURCE[0]:-$0}" == "$0" ]]; then
   main "$@"
 fi
