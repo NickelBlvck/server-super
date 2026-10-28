@@ -21,6 +21,8 @@ CROWDSEC_LIST="/etc/apt/sources.list.d/crowdsec.list"
 PSI_CLI="/usr/local/sbin/vps-psiphon"
 PSI_ENV="${PSI_ENV:-/etc/default/vps-psiphon}"
 SHORTCUT="${SS_PATH:-/usr/local/bin/SS}"
+SRV_GUARD_URL="${SRV_GUARD_URL:-https://raw.githubusercontent.com/NickelBlvck/server-super/main/srv-guard.sh}"
+SRV_GUARD_HOME="${SRV_GUARD_HOME:-/opt/srv-guard}"
 
 export DEBIAN_FRONTEND=noninteractive
 # needrestart только перечисляет сервисы, которым нужен рестарт, и не трогает их:
@@ -449,6 +451,7 @@ menu() {
   5) fail2ban: резерв для SSH
   6) Psiphon (vps-psiphon)
   7) Состояние
+  8) Установить команду SS (запуск из любой папки)
   0) Выход
 EOF
     read -r -p "Выбор: " choice || { echo; exit 0; }
@@ -460,6 +463,7 @@ EOF
       5) run_action fail2ban_install ;;
       6) psiphon_menu; continue ;;
       7) run_action show_status ;;
+      8) run_action install_shortcut ;;
       0) exit 0 ;;
       "") continue ;;
       *) warn "Нет такого пункта: $choice"; continue ;;
@@ -471,26 +475,50 @@ EOF
 # ─── команда SS ──────────────────────────────────────────────────────────────
 # Один раз: sudo bash srv-guard.sh install. Дальше `SS` запускает файл из этого же каталога,
 # поэтому после git pull переустанавливать ничего не нужно.
+# Скачивает скрипт в $1: во временный файл, проверка синтаксиса, потом атомарная замена.
+fetch_script() {
+  local dest="$1" tmp rc
+  install -d -m 0755 "$(dirname "$dest")" || return 1
+  tmp="$(mktemp)" || return 1
+  if ! curl -fsSL --connect-timeout 10 --max-time 60 -o "$tmp" "$SRV_GUARD_URL"; then
+    rm -f "$tmp"
+    err "Не скачивается $SRV_GUARD_URL"
+    return 1
+  fi
+  if ! bash -n "$tmp"; then
+    rm -f "$tmp"
+    err "Скачанный файл не прошёл проверку синтаксиса"
+    return 1
+  fi
+  install -m 0644 "$tmp" "$dest.new" && mv -f "$dest.new" "$dest"
+  rc=$?
+  rm -f "$tmp"
+  return "$rc"
+}
+
 install_shortcut() {
-  local self=""
+  local self="" target
   [[ -n "${BASH_SOURCE[0]:-}" ]] && self="$(readlink -f "${BASH_SOURCE[0]}")"
-  if [[ ! -f "$self" || "$self" == /dev/* ]]; then
-    die "Запусти установку из сохранённого файла (git clone / git pull), а не через пайп"
+  if [[ -f "$self" && "$self" != /dev/* && "$self" != "$SRV_GUARD_HOME/srv-guard.sh" ]]; then
+    target="$self"   # запущено из клона: SS ведёт на этот файл, git pull обновит и его
+  else
+    target="$SRV_GUARD_HOME/srv-guard.sh"   # запущено через curl или из копии: держим постоянную копию
+    fetch_script "$target" || die "Не удалось установить копию скрипта в $target"
   fi
   if [[ -e "$SHORTCUT" ]] && ! grep -q 'srv-guard.sh install' "$SHORTCUT"; then
     die "$SHORTCUT уже занят другой командой — переименуй её или удали вручную"
   fi
   {
-    printf '#!/usr/bin/env bash\n# Создано командой: srv-guard.sh install. Не править вручную.\nSCRIPT=%q\n' "$self"
+    printf '#!/usr/bin/env bash\n# Создано командой: srv-guard.sh install. Не править вручную.\nSCRIPT=%q\n' "$target"
     cat <<'WRAP'
 if [[ $EUID -ne 0 ]]; then exec sudo bash "$SCRIPT" "$@"; fi
 exec bash "$SCRIPT" "$@"
 WRAP
   } > "$SHORTCUT" || die "Не удалось записать $SHORTCUT"
   chmod 0755 "$SHORTCUT"
-  ok "Команда SS установлена → $self"
+  ok "Команда SS установлена → $target"
   echo "Запуск: SS (без root запросит sudo). Регистр важен: SS — не то же, что системная ss."
-  echo "После git pull в этом каталоге ничего переустанавливать не нужно."
+  echo "Из клона обновляет git pull. Из curl-копии обновляет повторная установка (sudo SS, пункт 8)."
 }
 
 usage() {
@@ -501,7 +529,7 @@ srv-guard: защита сервера Ubuntu/Debian
   sudo bash srv-guard.sh <команда>
 
 Команды:
-  install               создать команду SS (один раз; после git pull ничего не нужно)
+  install               команда SS: из клона — ссылка на файл, из curl — копия в /opt/srv-guard
   base                  apt update/upgrade, cron, mc, wget
   swap                  swap-файл /swapfile (спросит размер)
   crowdsec              CrowdSec + firewall-bouncer (nftables) + сценарии SSH
