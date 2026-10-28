@@ -20,6 +20,7 @@ CROWDSEC_KEYRING="/etc/apt/keyrings/crowdsec-archive-keyring.gpg"
 CROWDSEC_LIST="/etc/apt/sources.list.d/crowdsec.list"
 PSI_CLI="/usr/local/sbin/vps-psiphon"
 PSI_ENV="${PSI_ENV:-/etc/default/vps-psiphon}"
+SHORTCUT="${SS_PATH:-/usr/local/bin/SS}"
 
 export DEBIAN_FRONTEND=noninteractive
 # needrestart только перечисляет сервисы, которым нужен рестарт, и не трогает их:
@@ -467,6 +468,31 @@ EOF
   done
 }
 
+# ─── команда SS ──────────────────────────────────────────────────────────────
+# Один раз: sudo bash srv-guard.sh install. Дальше `SS` запускает файл из этого же каталога,
+# поэтому после git pull переустанавливать ничего не нужно.
+install_shortcut() {
+  local self
+  self="$(readlink -f "${BASH_SOURCE[0]}")"
+  if [[ ! -f "$self" || "$self" == /dev/* ]]; then
+    die "Запусти установку из сохранённого файла (git clone / git pull), а не через пайп"
+  fi
+  if [[ -e "$SHORTCUT" ]] && ! grep -q 'srv-guard.sh install' "$SHORTCUT"; then
+    die "$SHORTCUT уже занят другой командой — переименуй её или удали вручную"
+  fi
+  {
+    printf '#!/usr/bin/env bash\n# Создано командой: srv-guard.sh install. Не править вручную.\nSCRIPT=%q\n' "$self"
+    cat <<'WRAP'
+if [[ $EUID -ne 0 ]]; then exec sudo bash "$SCRIPT" "$@"; fi
+exec bash "$SCRIPT" "$@"
+WRAP
+  } > "$SHORTCUT" || die "Не удалось записать $SHORTCUT"
+  chmod 0755 "$SHORTCUT"
+  ok "Команда SS установлена → $self"
+  echo "Запуск: SS (без root запросит sudo). Регистр важен: SS — не то же, что системная ss."
+  echo "После git pull в этом каталоге ничего переустанавливать не нужно."
+}
+
 usage() {
   cat <<'EOF'
 srv-guard: защита сервера Ubuntu/Debian
@@ -475,6 +501,7 @@ srv-guard: защита сервера Ubuntu/Debian
   sudo bash srv-guard.sh <команда>
 
 Команды:
+  install               создать команду SS (один раз; после git pull ничего не нужно)
   base                  apt update/upgrade, cron, mc, wget
   swap                  swap-файл /swapfile (спросит размер)
   crowdsec              CrowdSec + firewall-bouncer (nftables) + сценарии SSH
@@ -501,6 +528,7 @@ main() {
     return 0
   fi
   case "$1" in
+    install)  run_action install_shortcut ;;
     base)     run_action base_setup ;;
     swap)     run_action setup_swap ;;
     crowdsec) run_action crowdsec_install ;;
